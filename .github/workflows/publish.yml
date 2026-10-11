@@ -13,50 +13,39 @@ concurrency:
 jobs:
   assemble:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
-      - name: Checkout target
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Read pinned source without modifying it
-        uses: actions/checkout@v4
-        with:
-          repository: stopsmokemsk-eng/nanosmoke-pwa
-          ref: 1cc596d88fda42c45d03333507f1007aa738cdf7
-          path: _source
-          persist-credentials: false
-      - name: Transfer source files on first run
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ ! -f index.html ]; then
-            for file in index.html build.mjs package.json manifest.webmanifest sw.js; do
-              cp "_source/$file" "$file"
-            done
-            cp _source/README.md SOURCE-NOTES.md
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add index.html build.mjs package.json manifest.webmanifest sw.js SOURCE-NOTES.md
-            git commit -m 'Transfer complete preview source from pinned commit'
-            git push origin HEAD:main
-          fi
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install build dependencies
-        run: npm install
-      - name: Import product catalogue, photos and generate PWA icons
-        run: npm run build
-      - name: Save deployable files in target repository
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.u2net
+          key: rembg-isnet-general-v1
+      - run: npm install
+      - run: npm run build
+      - name: Install background segmentation
+        run: python -m pip install 'rembg[cpu]==2.0.67' Pillow
+      - name: Create transparent PNG cutouts while retaining originals
+        run: python remove-backgrounds.py
+      - name: Enlarge objects and apply mobile motion fixes
+        run: node upgrade-visual.mjs
+      - name: Save processed catalogue and visual update
         shell: bash
         run: |
           set -euo pipefail
           cp -R _site/. ./
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add index.html manifest.webmanifest sw.js catalog.json import-report.json icon-192.png icon-512.png assets
+          git add index.html sw.js manifest.webmanifest catalog.json import-report.json cutout-report.json icon-192.png icon-512.png assets cutouts .nojekyll visual-v2.css visual-v2.js
           if ! git diff --cached --quiet; then
-            git commit -m 'Save imported catalogue, local photos and PWA icons'
+            git commit -m 'Publish transparent cutouts, larger objects and mobile motion v2'
             git push origin HEAD:main
           fi
       - uses: actions/upload-pages-artifact@v3
