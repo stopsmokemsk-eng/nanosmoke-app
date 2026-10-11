@@ -1,2 +1,11 @@
-# nanosmoke-app
-Nanosmoke: новый репозиторий для адаптивного PWA-предпросмотра. Склад, ИИ и приём заявок требуют отдельного подключения.
+# Nanosmoke App
+
+This repository starts an automated transfer and deployment of the existing preview. Source repository: stopsmokemsk-eng/nanosmoke-pwa, pinned commit 1cc596d88fda42c45d03333507f1007aa738cdf7. The old repository is read only and will not be modified.
+
+The first Actions run copies index.html, build.mjs, package.json, manifest.webmanifest and sw.js into main. It stores the original source notes in SOURCE-NOTES.md. Then it builds the site, imports available catalogue images/descriptions from nanosmoke.moscow and saves deployable index/catalog/assets/PNG icons in this repository. Those are real workflow-generated commits, not files already present before the workflow succeeds.
+
+To enable hosting once: Settings → Pages → Source → GitHub Actions. In Actions select Assemble and publish Nanosmoke. If the initial publish failed before Pages was enabled, run the workflow again. Source transfer and build can complete even if the final Pages hosting step is not enabled. The expected site path is /nanosmoke-app/; a link must not be treated as working until deployment is successful.
+
+No Vercel is used. The source is a rebuilt starter, not a complete copy of every earlier ZIP: original user video and previous expanded accessory bundles are not included. Unframed galleries do not remove backgrounds inside source photographs. The age entry gate, pulsing selection help, responsive layout, spring galleries, full-screen primary-item scenarios, BOX PRO-to-ACID scratch and smoke, local selection and explicitly marked demo chat are included in the pinned source. Real stock, AI, automatic lead delivery and checkout remain disconnected. No fictional inventory count is shown.
+
+Inspect import-report.json for missing images and errors. If source markup changes, the build may fail and must be repaired; publication is not guaranteed merely by creating the workflow. Verify photo identity, original logo, mobile rendering, browser installation/offline behaviour and applicable brand/content/advertising/trade requirements before production use. Personal credentials are not included. GitHub Actions permissions allow generated commits to this repository and Pages deployment; they do not enable Pages automatically.

@@ -1,0 +1,74 @@
+name: Assemble and publish Nanosmoke
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+concurrency:
+  group: nanosmoke-publication
+  cancel-in-progress: false
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Read pinned source without modifying it
+        uses: actions/checkout@v4
+        with:
+          repository: stopsmokemsk-eng/nanosmoke-pwa
+          ref: 1cc596d88fda42c45d03333507f1007aa738cdf7
+          path: _source
+          persist-credentials: false
+      - name: Transfer source files on first run
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f index.html ]; then
+            for file in index.html build.mjs package.json manifest.webmanifest sw.js; do
+              cp "_source/$file" "$file"
+            done
+            cp _source/README.md SOURCE-NOTES.md
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add index.html build.mjs package.json manifest.webmanifest sw.js SOURCE-NOTES.md
+            git commit -m 'Transfer complete preview source from pinned commit'
+            git push origin HEAD:main
+          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install build dependencies
+        run: npm install
+      - name: Import product catalogue, photos and generate PWA icons
+        run: npm run build
+      - name: Save deployable files in target repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp -R _site/. ./
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html manifest.webmanifest sw.js catalog.json import-report.json icon-192.png icon-512.png assets
+          if ! git diff --cached --quiet; then
+            git commit -m 'Save imported catalogue, local photos and PWA icons'
+            git push origin HEAD:main
+          fi
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+  publish:
+    needs: assemble
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+      - uses: actions/deploy-pages@v4
+        id: deployment
