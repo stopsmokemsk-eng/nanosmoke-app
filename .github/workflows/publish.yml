@@ -13,7 +13,7 @@ concurrency:
 jobs:
   assemble:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,22 +30,24 @@ jobs:
           key: rembg-isnet-general-v1
       - run: npm install
       - run: npm run build
-      - name: Install background segmentation
-        run: python -m pip install 'rembg[cpu]==2.0.67' Pillow
-      - name: Create transparent PNG cutouts while retaining originals
+      - name: Import descriptions and all discoverable product photos
+        run: node enrich-products.mjs
+      - run: python -m pip install 'rembg[cpu]==2.0.67' Pillow
+      - name: Reprocess backgrounds including previously opaque PNGs
         run: python remove-backgrounds.py
-      - name: Enlarge objects and apply mobile motion fixes
-        run: node upgrade-visual.mjs
-      - name: Save processed catalogue and visual update
+      - run: node upgrade-visual.mjs
+      - name: Generate separate product page and navigation
+        run: node add-product-pages.mjs
+      - name: Save processed site in main
         shell: bash
         run: |
           set -euo pipefail
           cp -R _site/. ./
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add index.html sw.js manifest.webmanifest catalog.json import-report.json cutout-report.json icon-192.png icon-512.png assets cutouts .nojekyll visual-v2.css visual-v2.js
+          git add index.html product.html product-routes.js sw.js manifest.webmanifest catalog.json import-report.json product-import-report.json cutout-report.json icon-192.png icon-512.png assets cutouts .nojekyll visual-v2.css visual-v2.js
           if ! git diff --cached --quiet; then
-            git commit -m 'Publish transparent cutouts, larger objects and mobile motion v2'
+            git commit -m 'Save product pages, detailed catalogue and transparent previews v3'
             git push origin HEAD:main
           fi
       - uses: actions/upload-pages-artifact@v3
@@ -56,8 +58,21 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Detect current Pages publishing mode
+        id: mode
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mode=$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq '.build_type // "legacy"')
+          echo "value=$mode" >> "$GITHUB_OUTPUT"
       - uses: actions/configure-pages@v5
+        if: steps.mode.outputs.value == 'workflow'
       - uses: actions/deploy-pages@v4
+        if: steps.mode.outputs.value == 'workflow'
         id: deployment
+      - name: Explicitly request latest branch-based Pages build
+        if: steps.mode.outputs.value == 'legacy'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api --method POST "repos/$GITHUB_REPOSITORY/pages/builds"

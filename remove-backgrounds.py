@@ -1,31 +1,25 @@
 from pathlib import Path
-from PIL import Image,ImageOps
+from PIL import Image,ImageOps,ImageChops
 from rembg import remove,new_session
 import hashlib,json,shutil
-root=Path('_site');data=json.loads((root/'catalog.json').read_text());destdir=root/'cutouts';destdir.mkdir(exist_ok=True);session=None;report={'processed':[],'failed':[],'visualReviewRequired':True};memo={}
-for product in data['products']:
-    rel=product.get('image')
-    if not rel:continue
-    if rel in memo:
-        product['sourceImage']=rel;product['image']=memo[rel];continue
-    source=root/rel
+root=Path('_site');data=json.loads((root/'catalog.json').read_text());folder=root/'cutouts';folder.mkdir(exist_ok=True);memo={};session=None;report={'processed':[],'failed':[],'visualReviewRequired':True,'algorithm':'always-segment-v2'}
+for p in data['products']:
+    rel=p.get('image')
+    if not rel:
+        report['failed'].append({'name':p['name'],'error':'missing image'});continue
     try:
-        if not source.is_file() or source.suffix.lower()=='.svg':raise ValueError('missing or unsupported source')
-        key='isnet-v1-'+hashlib.sha256(source.read_bytes()).hexdigest()[:24]+'.png';dest=destdir/key;cached=Path('cutouts')/key
-        if cached.is_file():shutil.copy2(cached,dest)
+        if rel in memo:p['sourceImage']=rel;p['image']=memo[rel];continue
+        src=root/rel
+        if not src.is_file() or src.suffix.lower()=='.svg':raise ValueError('missing or unsupported source')
+        name='isnet-v2-'+hashlib.sha256(src.read_bytes()).hexdigest()[:24]+'.png';out=folder/name;cached=Path('cutouts')/name
+        if cached.is_file():shutil.copy2(cached,out)
         else:
-            image=ImageOps.exif_transpose(Image.open(source)).convert('RGBA');image.thumbnail((1600,1600),Image.Resampling.LANCZOS)
-            if image.getchannel('A').getextrema()[0]<255:cutout=image
-            else:
-                if session is None:session=new_session('isnet-general-use',providers=['CPUExecutionProvider'])
-                cutout=remove(image,session=session).convert('RGBA')
-            alpha=cutout.getchannel('A');bbox=alpha.point(lambda p:255 if p>12 else 0).getbbox()
-            if bbox is None:raise ValueError('empty foreground')
-            hist=alpha.histogram();coverage=sum(hist[13:])/(cutout.width*cutout.height)
-            if coverage<0.005 or alpha.getextrema()[0]==255:raise ValueError('invalid or opaque mask')
-            cutout=cutout.crop(bbox);canvas=Image.new('RGBA',(cutout.width+32,cutout.height+32),(0,0,0,0));canvas.alpha_composite(cutout,(16,16));canvas.save(dest,optimize=True)
-        product['sourceImage']=rel;product['image']='cutouts/'+key;memo[rel]=product['image'];report['processed'].append({'name':product['name'],'source':rel,'cutout':product['image']})
-    except Exception as e:report['failed'].append({'name':product['name'],'source':rel,'error':str(e)})
-    if 'VOLT' in product['name'].upper() and product['category']=='accessories':product['category']='models'
-report['allPhotosConverted']=not report['failed'];report['uniqueCutouts']=len(memo)
-(root/'catalog.json').write_text(json.dumps(data,ensure_ascii=False));(root/'cutout-report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2));print(json.dumps(report,ensure_ascii=False,indent=2))
+            image=ImageOps.exif_transpose(Image.open(src)).convert('RGBA');image.thumbnail((1600,1600),Image.Resampling.LANCZOS)
+            if session is None:session=new_session('isnet-general-use',providers=['CPUExecutionProvider'])
+            result=remove(image,session=session).convert('RGBA');result.putalpha(ImageChops.multiply(result.getchannel('A'),image.getchannel('A')))
+            alpha=result.getchannel('A');box=alpha.point(lambda x:255 if x>12 else 0).getbbox()
+            if box is None or alpha.getextrema()[0]==255:raise ValueError('empty or opaque mask')
+            result=result.crop(box);canvas=Image.new('RGBA',(result.width+32,result.height+32),(0,0,0,0));canvas.alpha_composite(result,(16,16));canvas.save(out,optimize=True)
+        p['sourceImage']=rel;p['image']='cutouts/'+name;memo[rel]=p['image'];report['processed'].append({'name':p['name'],'source':rel,'cutout':p['image']})
+    except Exception as e:report['failed'].append({'name':p['name'],'source':rel,'error':str(e)})
+report['allPhotosConverted']=not report['failed'];report['uniqueCutouts']=len(memo);(root/'catalog.json').write_text(json.dumps(data,ensure_ascii=False));(root/'cutout-report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2));print(json.dumps(report,ensure_ascii=False,indent=2))
